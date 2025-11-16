@@ -40,8 +40,13 @@ func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) 
 		return nil, errors.New("failed to hash password")
 	}
 
-	// Create new user
-	user := models.NewUser(req.Email, string(hashedPassword), req.Name)
+	// Create new user with role
+	var user *models.User
+	if req.Role != "" && isValidRole(req.Role) {
+		user = models.NewUserWithRole(req.Email, string(hashedPassword), req.Name, req.Role)
+	} else {
+		user = models.NewUser(req.Email, string(hashedPassword), req.Name) // Default to "basic"
+	}
 
 	// Insert user into database
 	_, err = s.collection.InsertOne(ctx, user)
@@ -115,4 +120,15 @@ func (s *AuthService) GetUserByEmail(ctx context.Context, email string) (*models
 		return nil, err
 	}
 	return &user, nil
+}
+
+// isValidRole checks if the provided role is valid
+func isValidRole(role string) bool {
+	validRoles := []string{"basic", "content"}
+	for _, validRole := range validRoles {
+		if role == validRole {
+			return true
+		}
+	}
+	return false
 }

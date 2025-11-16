@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"time"
 
@@ -19,8 +20,15 @@ func Connect(mongoURI, databaseName string) (*mongo.Database, error) {
 	// Set client options
 	clientOptions := options.Client().ApplyURI(mongoURI)
 
-	// Set timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Configure TLS for MongoDB Atlas
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: false,
+		MinVersion:         tls.VersionTLS12,
+	}
+	clientOptions.SetTLSConfig(tlsConfig)
+
+	// Set timeout - increase for Atlas
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Connect to MongoDB

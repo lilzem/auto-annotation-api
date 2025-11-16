@@ -5,6 +5,7 @@ import (
 	"auto-annotation-api/database"
 	"auto-annotation-api/handlers"
 	"auto-annotation-api/middleware"
+	"auto-annotation-api/services"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -36,8 +37,31 @@ func main() {
 	// Initialize router
 	router := gin.Default()
 
+	// Initialize AWS service (if configured)
+	var awsService *services.AWSService
+	if cfg.AWSAccessKeyID != "" && cfg.AWSSecretKey != "" && cfg.AWSS3BucketName != "" {
+		var err error
+		awsService, err = services.NewAWSService(
+			cfg.AWSAccessKeyID,
+			cfg.AWSSecretKey,
+			cfg.AWSRegion,
+			cfg.AWSS3BucketName,
+			cfg.AWSPollyVoiceID,
+			cfg.AWSPollyEngine,
+		)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize AWS service: %v", err)
+			log.Println("TTS functionality will not be available")
+		} else {
+			log.Println("AWS service initialized successfully (S3 + Polly)")
+		}
+	} else {
+		log.Println("AWS credentials not configured. TTS functionality will not be available")
+	}
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(db)
+	annotationHandler := handlers.NewAnnotationHandler(db, cfg.OllamaBaseURL, cfg.OllamaModel, cfg.UploadDir, awsService)
 
 	// Basic route
 	router.GET("/", func(c *gin.Context) {
@@ -62,12 +86,25 @@ func main() {
 		protectedRoutes.GET("/profile", authHandler.GetProfile)
 	}
 
-	// API routes (you can add more here)
-	apiRoutes := router.Group("/api")
-	apiRoutes.Use(middleware.OptionalAuthMiddleware(db)) // Optional auth for some endpoints
+	// Annotation routes (protected - content creators only)
+	annotationRoutes := router.Group("/annotations")
+	annotationRoutes.Use(middleware.AuthMiddleware(db))
+	annotationRoutes.Use(middleware.ContentCreatorMiddleware())
 	{
-		// Add your other API endpoints here
-		// Example: apiRoutes.GET("/annotations", annotationHandler.GetAnnotations)
+		annotationRoutes.POST("/upload", annotationHandler.UploadAndCreateAnnotation)
+		annotationRoutes.GET("", annotationHandler.GetUserAnnotations)
+		annotationRoutes.GET("/stats", annotationHandler.GetAnnotationStats)
+		annotationRoutes.GET("/:id", annotationHandler.GetAnnotation)
+		annotationRoutes.PATCH("/:id", annotationHandler.UpdateAnnotation)
+		annotationRoutes.DELETE("/:id", annotationHandler.DeleteAnnotation)
+		annotationRoutes.POST("/:id/tts", annotationHandler.GenerateTTSForAnnotation)
+		annotationRoutes.GET("/:id/audio", annotationHandler.DownloadAudio) // Deprecated - kept for backward compatibility
+	}
+
+	// System routes
+	systemRoutes := router.Group("/system")
+	{
+		systemRoutes.GET("/services/status", annotationHandler.CheckServices)
 	}
 
 

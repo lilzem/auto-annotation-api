@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"auto-annotation-api/models"
 	"auto-annotation-api/services"
 	"auto-annotation-api/utils"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -109,6 +111,89 @@ func OptionalAuthMiddleware(db *mongo.Database) gin.HandlerFunc {
 		// Add user to context
 		c.Set("user", user)
 		c.Set("userID", user.ID)
+		c.Next()
+	}
+}
+
+// ContentCreatorMiddleware ensures only users with "content" role can access
+func ContentCreatorMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get user from context (should be set by AuthMiddleware)
+		userInterface, exists := c.Get("user")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": "User not authenticated",
+			})
+			c.Abort()
+			return
+		}
+
+		user, ok := userInterface.(*models.User)
+		if !ok {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "Invalid user data",
+			})
+			c.Abort()
+			return
+		}
+
+		// Check if user has content creator role
+		if !user.IsContentCreator() {
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"message": "Access denied. Content creator role required.",
+				"user_role": user.Role,
+			})
+			c.Abort()
+			return
+		}
+
+		// User has content creator role, continue
+		c.Next()
+	}
+}
+
+// RoleMiddleware creates a middleware that checks for specific roles
+func RoleMiddleware(allowedRoles ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get user from context (should be set by AuthMiddleware)
+		userInterface, exists := c.Get("user")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": "User not authenticated",
+			})
+			c.Abort()
+			return
+		}
+
+		user, ok := userInterface.(*models.User)
+		if !ok {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "Invalid user data",
+			})
+			c.Abort()
+			return
+		}
+
+		// Check if user has any of the allowed roles
+		hasRole := slices.ContainsFunc(allowedRoles, user.HasRole)
+
+		if !hasRole {
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"message": "Access denied. Required role not found.",
+				"user_role": user.Role,
+				"allowed_roles": allowedRoles,
+			})
+			c.Abort()
+			return
+		}
+
+		// User has required role, continue
 		c.Next()
 	}
 }
