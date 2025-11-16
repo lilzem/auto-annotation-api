@@ -86,19 +86,26 @@ func main() {
 		protectedRoutes.GET("/profile", authHandler.GetProfile)
 	}
 
-	// Annotation routes (protected - content creators only)
+	// Annotation routes - viewing is available to all authenticated users
 	annotationRoutes := router.Group("/annotations")
 	annotationRoutes.Use(middleware.AuthMiddleware(db))
-	annotationRoutes.Use(middleware.ContentCreatorMiddleware())
 	{
-		annotationRoutes.POST("/upload", annotationHandler.UploadAndCreateAnnotation)
-		annotationRoutes.GET("", annotationHandler.GetUserAnnotations)
-		annotationRoutes.GET("/stats", annotationHandler.GetAnnotationStats)
+		// Public viewing (any authenticated user)
+		annotationRoutes.GET("", annotationHandler.GetAllAnnotations)
 		annotationRoutes.GET("/:id", annotationHandler.GetAnnotation)
-		annotationRoutes.PATCH("/:id", annotationHandler.UpdateAnnotation)
-		annotationRoutes.DELETE("/:id", annotationHandler.DeleteAnnotation)
-		annotationRoutes.POST("/:id/tts", annotationHandler.GenerateTTSForAnnotation)
 		annotationRoutes.GET("/:id/audio", annotationHandler.DownloadAudio) // Deprecated - kept for backward compatibility
+	}
+
+	// Annotation creation/modification routes (content creators only)
+	annotationCreatorRoutes := router.Group("/annotations")
+	annotationCreatorRoutes.Use(middleware.AuthMiddleware(db))
+	annotationCreatorRoutes.Use(middleware.ContentCreatorMiddleware())
+	{
+		annotationCreatorRoutes.POST("/upload", annotationHandler.UploadAndCreateAnnotation)
+		annotationCreatorRoutes.GET("/stats", annotationHandler.GetAnnotationStats)
+		annotationCreatorRoutes.PATCH("/:id", annotationHandler.UpdateAnnotation)
+		annotationCreatorRoutes.DELETE("/:id", annotationHandler.DeleteAnnotation)
+		annotationCreatorRoutes.POST("/:id/tts", annotationHandler.GenerateTTSForAnnotation)
 	}
 
 	// System routes

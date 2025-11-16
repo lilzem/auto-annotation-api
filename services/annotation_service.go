@@ -4,8 +4,8 @@ import (
 	"auto-annotation-api/models"
 	"context"
 	"fmt"
+	"io"
 	"log"
-	"os"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -23,30 +23,22 @@ type AnnotationService struct {
 
 // NewAnnotationService creates a new annotation service
 func NewAnnotationService(db *mongo.Database, ollamaBaseURL, ollamaModel, uploadDir string, awsService *AWSService) *AnnotationService {
-	if uploadDir == "" {
-		uploadDir = "uploads"
-	}
-
-	// Create upload directory if it doesn't exist
-	os.MkdirAll(uploadDir, 0755)
-	os.MkdirAll(uploadDir+"/files", 0755)
-
 	return &AnnotationService{
 		collection:   db.Collection("annotations"),
 		ollamaClient: NewOllamaClientWithConfig(ollamaBaseURL, ollamaModel),
 		awsService:   awsService,
-		uploadDir:    uploadDir,
+		uploadDir:    uploadDir, // Kept for backward compatibility, but not used
 	}
 }
 
-// CreateAnnotation creates a new annotation from uploaded file (synchronous)
-func (s *AnnotationService) CreateAnnotation(ctx context.Context, userID, title, filePath, fileType string) (*models.Annotation, error) {
-	// Create annotation record
-	annotation := models.NewAnnotation(userID, title, filePath, fileType)
+// CreateAnnotationFromStream creates a new annotation from uploaded file stream (synchronous)
+func (s *AnnotationService) CreateAnnotationFromStream(ctx context.Context, userID, title string, fileReader io.Reader, fileSize int64, fileType string) (*models.Annotation, error) {
+	// Create annotation record (no source file path)
+	annotation := models.NewAnnotation(userID, title, "", fileType)
 
-	// Step 1: Extract text from file
-	log.Printf("Extracting text from %s file: %s", fileType, filePath)
-	text, err := s.extractTextFromFile(filePath, fileType)
+	// Step 1: Extract text from file stream
+	log.Printf("Extracting text from %s stream", fileType)
+	text, err := s.extractTextFromStream(fileReader, fileSize, fileType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract text: %w", err)
 	}
@@ -171,14 +163,14 @@ func (s *AnnotationService) UpdateAnnotation(ctx context.Context, annotationID, 
 	return s.GetAnnotationByID(ctx, annotationID)
 }
 
-// extractTextFromFile extracts text content from uploaded file
-func (s *AnnotationService) extractTextFromFile(filePath, fileType string) (string, error) {
-	parser := GetParser(filePath)
+// extractTextFromStream extracts text content from uploaded file stream
+func (s *AnnotationService) extractTextFromStream(reader io.Reader, size int64, fileType string) (string, error) {
+	parser := GetParser(fileType)
 	if parser == nil {
 		return "", fmt.Errorf("unsupported file type: %s", fileType)
 	}
 
-	return parser.ExtractText(filePath)
+	return parser.ExtractTextFromReader(reader, size)
 }
 
 
@@ -195,8 +187,8 @@ func (s *AnnotationService) GetAnnotationByID(ctx context.Context, annotationID 
 	return &annotation, nil
 }
 
-// GetUserAnnotations retrieves all annotations for a user
-func (s *AnnotationService) GetUserAnnotations(ctx context.Context, userID string, limit, offset int64) ([]*models.Annotation, error) {
+// GetAllAnnotations retrieves all annotations (public access)
+func (s *AnnotationService) GetAllAnnotations(ctx context.Context, limit, offset int64) ([]*models.Annotation, error) {
 	opts := options.Find()
 	if limit > 0 {
 		opts.SetLimit(limit)
@@ -206,7 +198,8 @@ func (s *AnnotationService) GetUserAnnotations(ctx context.Context, userID strin
 	}
 	opts.SetSort(bson.D{{Key: "created_at", Value: -1}})
 
-	cursor, err := s.collection.Find(ctx, bson.M{"user_id": userID}, opts)
+	// No user filter - return all annotations
+	cursor, err := s.collection.Find(ctx, bson.M{}, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -220,9 +213,9 @@ func (s *AnnotationService) GetUserAnnotations(ctx context.Context, userID strin
 	return annotations, nil
 }
 
-// DeleteAnnotation deletes an annotation and its associated files
+// DeleteAnnotation deletes an annotation
 func (s *AnnotationService) DeleteAnnotation(ctx context.Context, annotationID, userID string) error {
-	// Get annotation first to check ownership and get file paths
+	// Get annotation first to check ownership
 	annotation, err := s.GetAnnotationByID(ctx, annotationID)
 	if err != nil {
 		return err
@@ -242,23 +235,10 @@ func (s *AnnotationService) DeleteAnnotation(ctx context.Context, annotationID, 
 		return fmt.Errorf("annotation not found")
 	}
 
-	// Clean up files asynchronously
-	go s.cleanupFiles(annotation.SourceFile, annotation.TTSURL)
+	// Note: TTS files are in S3. We're keeping them for now.
+	// If you want to delete from S3, extract the key from annotation.TTSURL and call s.awsService.DeleteFromS3(key)
 
 	return nil
-}
-
-// cleanupFiles removes associated files
-func (s *AnnotationService) cleanupFiles(sourceFile, ttsURL string) {
-	// Remove source file
-	if sourceFile != "" {
-		if err := os.Remove(sourceFile); err != nil {
-			log.Printf("Failed to remove source file %s: %v", sourceFile, err)
-		}
-	}
-
-	// Note: TTS files are in S3, we could delete them but keeping them for now
-	// If you want to delete from S3, extract the key from URL and call s.awsService.DeleteFromS3(key)
 }
 
 // GetAnnotationStats returns statistics about annotations

@@ -1,8 +1,9 @@
 package services
 
 import (
+	"bytes"
 	"fmt"
-	"path/filepath"
+	"io"
 	"strings"
 
 	"github.com/ledongthuc/pdf"
@@ -16,13 +17,19 @@ func NewPDFParser() *PDFParser {
 	return &PDFParser{}
 }
 
-// ExtractText extracts text content from a PDF file
-func (p *PDFParser) ExtractText(filePath string) (string, error) {
-	f, r, err := pdf.Open(filePath)
+// ExtractTextFromReader extracts text content from a PDF reader
+func (p *PDFParser) ExtractTextFromReader(reader io.Reader, size int64) (string, error) {
+	// Read all data into memory
+	data, err := io.ReadAll(reader)
 	if err != nil {
-		return "", fmt.Errorf("failed to open PDF: %w", err)
+		return "", fmt.Errorf("failed to read PDF data: %w", err)
 	}
-	defer f.Close()
+
+	// Create reader from bytes
+	r, err := pdf.NewReader(bytes.NewReader(data), size)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse PDF: %w", err)
+	}
 
 	var textBuilder strings.Builder
 	totalPages := r.NumPage()
@@ -52,6 +59,43 @@ func (p *PDFParser) ExtractText(filePath string) (string, error) {
 	// Clean up the text
 	extractedText = cleanExtractedText(extractedText)
 	
+	if extractedText == "" {
+		return "", fmt.Errorf("no text content found in PDF")
+	}
+
+	return extractedText, nil
+}
+
+// ExtractText extracts text content from a PDF file (kept for backward compatibility if needed)
+func (p *PDFParser) ExtractText(filePath string) (string, error) {
+	f, r, err := pdf.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open PDF: %w", err)
+	}
+	defer f.Close()
+
+	var textBuilder strings.Builder
+	totalPages := r.NumPage()
+
+	for pageIndex := 1; pageIndex <= totalPages; pageIndex++ {
+		page := r.Page(pageIndex)
+		if page.V.IsNull() {
+			continue
+		}
+
+		textContent, err := page.GetPlainText(nil)
+		if err != nil {
+			continue
+		}
+
+		if pageIndex > 1 {
+			textBuilder.WriteString("\n\n--- Page " + fmt.Sprintf("%d", pageIndex) + " ---\n\n")
+		}
+		
+		textBuilder.WriteString(textContent)
+	}
+
+	extractedText := cleanExtractedText(textBuilder.String())
 	if extractedText == "" {
 		return "", fmt.Errorf("no text content found in PDF")
 	}
@@ -90,13 +134,13 @@ func cleanExtractedText(text string) string {
 // FileParser interface for unified file parsing
 type FileParser interface {
 	ExtractText(filePath string) (string, error)
+	ExtractTextFromReader(reader io.Reader, size int64) (string, error)
 }
 
-// GetParser returns appropriate parser based on file extension
-func GetParser(filePath string) FileParser {
-	ext := strings.ToLower(filepath.Ext(filePath))
-	switch ext {
-	case ".pdf":
+// GetParser returns appropriate parser based on file type
+func GetParser(fileType string) FileParser {
+	switch strings.ToLower(fileType) {
+	case "pdf", ".pdf":
 		return NewPDFParser()
 	default:
 		return nil

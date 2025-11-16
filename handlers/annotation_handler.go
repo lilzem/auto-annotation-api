@@ -3,9 +3,7 @@ package handlers
 import (
 	"auto-annotation-api/models"
 	"auto-annotation-api/services"
-	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -63,7 +61,7 @@ func (h *AnnotationHandler) UploadAndCreateAnnotation(c *gin.Context) {
 	}
 
 	// Handle file upload
-	file, err := c.FormFile("file")
+	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -74,7 +72,7 @@ func (h *AnnotationHandler) UploadAndCreateAnnotation(c *gin.Context) {
 	}
 
 	// Validate file type
-	ext := strings.ToLower(filepath.Ext(file.Filename))
+	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	if ext != ".pdf" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -83,27 +81,29 @@ func (h *AnnotationHandler) UploadAndCreateAnnotation(c *gin.Context) {
 		return
 	}
 
-	// Create unique filename
-	filename := fmt.Sprintf("%s_%s%s", user.ID, title, ext)
-	filename = strings.ReplaceAll(filename, " ", "_")
-	filePath := filepath.Join(h.uploadDir, "files", filename)
-
-	// Save uploaded file
-	if err := c.SaveUploadedFile(file, filePath); err != nil {
+	// Open file for reading (no saving to disk!)
+	file, err := fileHeader.Open()
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"message": "Failed to save uploaded file",
+			"message": "Failed to open uploaded file",
 			"error":   err.Error(),
 		})
 		return
 	}
+	defer file.Close()
 
-	// Create annotation
+	// Create annotation from stream
 	fileType := strings.TrimPrefix(ext, ".")
-	annotation, err := h.service.CreateAnnotation(c.Request.Context(), user.ID, title, filePath, fileType)
+	annotation, err := h.service.CreateAnnotationFromStream(
+		c.Request.Context(),
+		user.ID,
+		title,
+		file,
+		fileHeader.Size,
+		fileType,
+	)
 	if err != nil {
-		// Clean up uploaded file if annotation creation fails
-		os.Remove(filePath)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": "Failed to create annotation",
@@ -119,7 +119,7 @@ func (h *AnnotationHandler) UploadAndCreateAnnotation(c *gin.Context) {
 	})
 }
 
-// GetAnnotation handles GET /annotations/:id
+// GetAnnotation handles GET /annotations/:id (any authenticated user can view)
 func (h *AnnotationHandler) GetAnnotation(c *gin.Context) {
 	annotationID := c.Param("id")
 	
@@ -145,27 +145,8 @@ func (h *AnnotationHandler) GetAnnotation(c *gin.Context) {
 	})
 }
 
-// GetUserAnnotations handles GET /annotations
-func (h *AnnotationHandler) GetUserAnnotations(c *gin.Context) {
-	// Get user from context
-	userInterface, exists := c.Get("user")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "User not authenticated",
-		})
-		return
-	}
-
-	user, ok := userInterface.(*models.User)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "Invalid user data",
-		})
-		return
-	}
-
+// GetAllAnnotations handles GET /annotations (all annotations for any authenticated user)
+func (h *AnnotationHandler) GetAllAnnotations(c *gin.Context) {
 	// Parse query parameters
 	limitStr := c.DefaultQuery("limit", "10")
 	offsetStr := c.DefaultQuery("offset", "0")
@@ -180,8 +161,8 @@ func (h *AnnotationHandler) GetUserAnnotations(c *gin.Context) {
 		offset = 0
 	}
 
-	// Get annotations
-	annotations, err := h.service.GetUserAnnotations(c.Request.Context(), user.ID, limit, offset)
+	// Get all annotations (no user filter)
+	annotations, err := h.service.GetAllAnnotations(c.Request.Context(), limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
