@@ -4,20 +4,28 @@ import (
 	"auto-annotation-api/models"
 	"errors"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret = []byte(getJWTSecret())
+var (
+	jwtSecret     []byte
+	jwtSecretOnce sync.Once
+)
 
-func getJWTSecret() string {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		// Default secret - you should set JWT_SECRET in production
-		return "your-super-secret-jwt-key-change-this-in-production"
-	}
-	return secret
+// getJWTSecret returns the JWT secret, loading it lazily
+func getJWTSecret() []byte {
+	jwtSecretOnce.Do(func() {
+		secret := os.Getenv("JWT_SECRET")
+		if secret == "" {
+			// Default secret - you should set JWT_SECRET in production
+			secret = "your-super-secret-jwt-key-change-this-in-production"
+		}
+		jwtSecret = []byte(secret)
+	})
+	return jwtSecret
 }
 
 // GenerateToken generates a JWT token for a user
@@ -34,7 +42,7 @@ func GenerateToken(user *models.User) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
+	return token.SignedString(getJWTSecret())
 }
 
 // ValidateToken validates a JWT token and returns the claims
@@ -44,7 +52,7 @@ func ValidateToken(tokenString string) (*models.JWTClaims, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("invalid token signing method")
 		}
-		return jwtSecret, nil
+		return getJWTSecret(), nil
 	})
 
 	if err != nil {

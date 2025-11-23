@@ -50,7 +50,7 @@ func (h *AnnotationHandler) UploadAndCreateAnnotation(c *gin.Context) {
 		return
 	}
 
-	// Get title from form
+	// Get title and image from form
 	title := c.PostForm("title")
 	if title == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -59,6 +59,8 @@ func (h *AnnotationHandler) UploadAndCreateAnnotation(c *gin.Context) {
 		})
 		return
 	}
+	
+	image := c.PostForm("image") // Optional image URL
 
 	// Handle file upload
 	fileHeader, err := c.FormFile("file")
@@ -99,6 +101,7 @@ func (h *AnnotationHandler) UploadAndCreateAnnotation(c *gin.Context) {
 		c.Request.Context(),
 		user.ID,
 		title,
+		image,
 		file,
 		fileHeader.Size,
 		fileType,

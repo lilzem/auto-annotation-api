@@ -32,9 +32,10 @@ func NewAnnotationService(db *mongo.Database, ollamaBaseURL, ollamaModel, upload
 }
 
 // CreateAnnotationFromStream creates a new annotation from uploaded file stream (synchronous)
-func (s *AnnotationService) CreateAnnotationFromStream(ctx context.Context, userID, title string, fileReader io.Reader, fileSize int64, fileType string) (*models.Annotation, error) {
+func (s *AnnotationService) CreateAnnotationFromStream(ctx context.Context, userID, title, image string, fileReader io.Reader, fileSize int64, fileType string) (*models.Annotation, error) {
 	// Create annotation record (no source file path)
 	annotation := models.NewAnnotation(userID, title, "", fileType)
+	annotation.Image = image // Set optional image
 
 	// Step 1: Extract text from file stream
 	log.Printf("Extracting text from %s stream", fileType)
@@ -139,6 +140,9 @@ func (s *AnnotationService) UpdateAnnotation(ctx context.Context, annotationID, 
 
 	if req.Title != nil {
 		updateFields["title"] = *req.Title
+	}
+	if req.Image != nil {
+		updateFields["image"] = *req.Image
 	}
 	if req.Annotation != nil {
 		updateFields["annotation"] = *req.Annotation

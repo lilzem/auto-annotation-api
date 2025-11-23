@@ -11,6 +11,7 @@ type Annotation struct {
 	ID           string    `json:"id" bson:"_id"`
 	UserID       string    `json:"user_id" bson:"user_id"`
 	Title        string    `json:"title" bson:"title"`
+	Image        string    `json:"image,omitempty" bson:"image,omitempty"` // Image URL/path
 	SourceFile   string    `json:"source_file" bson:"source_file"`
 	SourceType   string    `json:"source_type" bson:"source_type"` // "pdf" only now
 	TextContent  string    `json:"text_content" bson:"text_content"`
@@ -26,12 +27,14 @@ type Annotation struct {
 // CreateAnnotationRequest represents the request to create an annotation
 type CreateAnnotationRequest struct {
 	Title string `form:"title" binding:"required"`
+	Image string `form:"image"` // Optional image URL
 }
 
 // AnnotationResponse represents the annotation response
 type AnnotationResponse struct {
 	ID          string    `json:"id"`
 	Title       string    `json:"title"`
+	Image       string    `json:"image,omitempty"`
 	SourceFile  string    `json:"source_file"`
 	SourceType  string    `json:"source_type"`
 	Annotation  string    `json:"annotation"`
@@ -62,6 +65,7 @@ func (a *Annotation) ToResponse() AnnotationResponse {
 	return AnnotationResponse{
 		ID:         a.ID,
 		Title:      a.Title,
+		Image:      a.Image,
 		SourceFile: a.SourceFile,
 		SourceType: a.SourceType,
 		Annotation: a.Annotation,
@@ -76,6 +80,7 @@ func (a *Annotation) ToResponse() AnnotationResponse {
 // UpdateAnnotationRequest represents the request to update an annotation
 type UpdateAnnotationRequest struct {
 	Title      *string `json:"title,omitempty"`
+	Image      *string `json:"image,omitempty"`
 	Annotation *string `json:"annotation,omitempty"`
 	Genre      *string `json:"genre,omitempty"`
 }
