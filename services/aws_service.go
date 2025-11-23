@@ -11,8 +11,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/polly"
-	"github.com/aws/aws-sdk-go-v2/service/polly/types"
+	pollyTypes "github.com/aws/aws-sdk-go-v2/service/polly/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3Types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 // AWSService handles AWS operations (S3 and Polly)
@@ -59,20 +60,20 @@ func NewAWSService(accessKeyID, secretKey, region, bucketName, voiceID, engine s
 // GenerateTTS generates TTS audio using AWS Polly and returns audio data
 func (a *AWSService) GenerateTTS(text string) ([]byte, error) {
 	// Determine engine type
-	var engineType types.Engine
+	var engineType pollyTypes.Engine
 	if a.pollyEngine == "neural" {
-		engineType = types.EngineNeural
+		engineType = pollyTypes.EngineNeural
 	} else {
-		engineType = types.EngineStandard
+		engineType = pollyTypes.EngineStandard
 	}
 
 	// Create Polly input
 	input := &polly.SynthesizeSpeechInput{
 		Text:         aws.String(text),
-		OutputFormat: types.OutputFormatMp3,
-		VoiceId:      types.VoiceId(a.pollyVoiceID),
+		OutputFormat: pollyTypes.OutputFormatMp3,
+		VoiceId:      pollyTypes.VoiceId(a.pollyVoiceID),
 		Engine:       engineType,
-		TextType:     types.TextTypeText,
+		TextType:     pollyTypes.TextTypeText,
 	}
 
 	// Call Polly API
@@ -93,12 +94,13 @@ func (a *AWSService) GenerateTTS(text string) ([]byte, error) {
 
 // UploadToS3 uploads data to S3 and returns the public URL
 func (a *AWSService) UploadToS3(key string, data []byte, contentType string) (string, error) {
-	// Upload to S3
+	// Upload to S3 with public-read ACL
 	_, err := a.s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket:      aws.String(a.bucketName),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(data),
 		ContentType: aws.String(contentType),
+		ACL:         s3Types.ObjectCannedACLPublicRead, // Make the object publicly accessible
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to upload to S3: %w", err)
