@@ -121,19 +121,9 @@ func (s *AnnotationService) GenerateTTSForAnnotation(ctx context.Context, annota
 	return s.GetAnnotationByID(ctx, annotationID)
 }
 
-// UpdateAnnotation updates an annotation's fields
+// UpdateAnnotation updates an annotation's fields (any content creator can edit)
 func (s *AnnotationService) UpdateAnnotation(ctx context.Context, annotationID, userID string, req *models.UpdateAnnotationRequest) (*models.Annotation, error) {
-	// Get annotation first to check ownership
-	annotation, err := s.GetAnnotationByID(ctx, annotationID)
-	if err != nil {
-		return nil, err
-	}
-
-	if annotation.UserID != userID {
-		return nil, fmt.Errorf("unauthorized: annotation belongs to different user")
-	}
-
-	// Build update query
+	// Build update query (no ownership check - CMS style)
 	updateFields := bson.M{
 		"updated_at": time.Now(),
 	}
@@ -154,13 +144,17 @@ func (s *AnnotationService) UpdateAnnotation(ctx context.Context, annotationID, 
 	update := bson.M{"$set": updateFields}
 
 	// Update annotation
-	_, err = s.collection.UpdateOne(
+	result, err := s.collection.UpdateOne(
 		ctx,
 		bson.M{"_id": annotationID},
 		update,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update annotation: %w", err)
+	}
+
+	if result.MatchedCount == 0 {
+		return nil, fmt.Errorf("annotation not found")
 	}
 
 	// Return updated annotation
@@ -217,19 +211,9 @@ func (s *AnnotationService) GetAllAnnotations(ctx context.Context, limit, offset
 	return annotations, nil
 }
 
-// DeleteAnnotation deletes an annotation
+// DeleteAnnotation deletes an annotation (any content creator can delete)
 func (s *AnnotationService) DeleteAnnotation(ctx context.Context, annotationID, userID string) error {
-	// Get annotation first to check ownership
-	annotation, err := s.GetAnnotationByID(ctx, annotationID)
-	if err != nil {
-		return err
-	}
-
-	if annotation.UserID != userID {
-		return fmt.Errorf("unauthorized: annotation belongs to different user")
-	}
-
-	// Delete from database
+	// Delete from database (no ownership check - CMS style)
 	result, err := s.collection.DeleteOne(ctx, bson.M{"_id": annotationID})
 	if err != nil {
 		return err
