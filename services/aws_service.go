@@ -13,7 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/polly"
 	pollyTypes "github.com/aws/aws-sdk-go-v2/service/polly/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3Types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 // AWSService handles AWS operations (S3 and Polly)
@@ -94,13 +93,12 @@ func (a *AWSService) GenerateTTS(text string) ([]byte, error) {
 
 // UploadToS3 uploads data to S3 and returns the public URL
 func (a *AWSService) UploadToS3(key string, data []byte, contentType string) (string, error) {
-	// Upload to S3 with public-read ACL
+	// Upload to S3 (public access controlled by bucket policy, not ACL)
 	_, err := a.s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket:      aws.String(a.bucketName),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(data),
 		ContentType: aws.String(contentType),
-		ACL:         s3Types.ObjectCannedACLPublicRead, // Make the object publicly accessible
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to upload to S3: %w", err)
@@ -125,6 +123,34 @@ func (a *AWSService) GenerateAndUploadTTS(text, annotationID string) (string, er
 
 	// Upload to S3
 	url, err := a.UploadToS3(key, audioData, "audio/mpeg")
+	if err != nil {
+		return "", err
+	}
+
+	return url, nil
+}
+
+// UploadImageToS3 uploads an image to S3 and returns the URL
+func (a *AWSService) UploadImageToS3(imageData []byte, annotationID, contentType string) (string, error) {
+	// Determine file extension from content type
+	ext := ".jpg"
+	switch contentType {
+	case "image/png":
+		ext = ".png"
+	case "image/jpeg", "image/jpg":
+		ext = ".jpg"
+	case "image/gif":
+		ext = ".gif"
+	case "image/webp":
+		ext = ".webp"
+	}
+
+	// Create S3 key with timestamp to ensure uniqueness
+	timestamp := time.Now().Unix()
+	key := fmt.Sprintf("images/%s_%d%s", annotationID, timestamp, ext)
+
+	// Upload to S3
+	url, err := a.UploadToS3(key, imageData, contentType)
 	if err != nil {
 		return "", err
 	}
@@ -157,7 +183,7 @@ func (a *AWSService) TestConnection() error {
 	// Test Polly by describing voices
 	_, err = a.pollyClient.DescribeVoices(context.TODO(), &polly.DescribeVoicesInput{})
 	if err != nil {
-		return fmt.Errorf("Polly not accessible: %w", err)
+		return fmt.Errorf("polly not accessible: %w", err)
 	}
 
 	return nil

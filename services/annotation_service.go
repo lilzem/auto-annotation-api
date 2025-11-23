@@ -161,6 +161,26 @@ func (s *AnnotationService) UpdateAnnotation(ctx context.Context, annotationID, 
 	return s.GetAnnotationByID(ctx, annotationID)
 }
 
+// UploadImageForAnnotationUpdate uploads an image to S3 and returns the URL (doesn't update DB)
+func (s *AnnotationService) UploadImageForAnnotationUpdate(ctx context.Context, annotationID string, imageData []byte, contentType string) (string, error) {
+	// Check if AWS service is available
+	if s.awsService == nil {
+		return "", fmt.Errorf("AWS service not configured")
+	}
+
+	log.Printf("Uploading image for annotation ID: %s", annotationID)
+
+	// Upload image to S3
+	imageURL, err := s.awsService.UploadImageToS3(imageData, annotationID, contentType)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload image: %w", err)
+	}
+
+	log.Printf("Image uploaded to S3: %s", imageURL)
+
+	return imageURL, nil
+}
+
 // extractTextFromStream extracts text content from uploaded file stream
 func (s *AnnotationService) extractTextFromStream(reader io.Reader, size int64, fileType string) (string, error) {
 	parser := GetParser(fileType)

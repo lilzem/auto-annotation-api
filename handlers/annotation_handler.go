@@ -3,10 +3,13 @@ package handlers
 import (
 	"auto-annotation-api/models"
 	"auto-annotation-api/services"
+	"fmt"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -50,7 +53,7 @@ func (h *AnnotationHandler) UploadAndCreateAnnotation(c *gin.Context) {
 		return
 	}
 
-	// Get title and image from form
+	// Get title from form
 	title := c.PostForm("title")
 	if title == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -60,9 +63,83 @@ func (h *AnnotationHandler) UploadAndCreateAnnotation(c *gin.Context) {
 		return
 	}
 	
-	image := c.PostForm("image") // Optional image URL
+	// Handle optional image - can be URL or file upload
+	var imageURL string
+	
+	// Check if image file was uploaded
+	imageFile, err := c.FormFile("image")
+	if err == nil {
+		// Image file provided - validate and upload to S3
+		ext := strings.ToLower(filepath.Ext(imageFile.Filename))
+		validExts := map[string]bool{
+			".jpg":  true,
+			".jpeg": true,
+			".png":  true,
+			".gif":  true,
+			".webp": true,
+		}
 
-	// Handle file upload
+		if !validExts[ext] {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "Only image files are supported (jpg, png, gif, webp)",
+			})
+			return
+		}
+
+		// Open and read image file
+		imgFile, err := imageFile.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "Failed to open uploaded image",
+				"error":   err.Error(),
+			})
+			return
+		}
+		defer imgFile.Close()
+
+		imageData := make([]byte, imageFile.Size)
+		_, err = imgFile.Read(imageData)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "Failed to read uploaded image",
+				"error":   err.Error(),
+			})
+			return
+		}
+
+		// Determine content type
+		contentType := "image/jpeg"
+		switch ext {
+		case ".png":
+			contentType = "image/png"
+		case ".gif":
+			contentType = "image/gif"
+		case ".webp":
+			contentType = "image/webp"
+		}
+
+		// We'll pass the image data to the service to upload after annotation is created
+		// For now, generate a temporary ID to use for the S3 key
+		tempID := fmt.Sprintf("temp_%d", time.Now().UnixNano())
+		uploadedURL, err := h.service.UploadImageForAnnotationUpdate(c.Request.Context(), tempID, imageData, contentType)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": "Failed to upload image",
+				"error":   err.Error(),
+			})
+			return
+		}
+		imageURL = uploadedURL
+	} else {
+		// No image file - check if image URL was provided as text
+		imageURL = c.PostForm("image_url")
+	}
+
+	// Handle PDF file upload
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -101,7 +178,7 @@ func (h *AnnotationHandler) UploadAndCreateAnnotation(c *gin.Context) {
 		c.Request.Context(),
 		user.ID,
 		title,
-		image,
+		imageURL,
 		file,
 		fileHeader.Size,
 		fileType,
@@ -359,7 +436,7 @@ func (h *AnnotationHandler) GenerateTTSForAnnotation(c *gin.Context) {
 	})
 }
 
-// UpdateAnnotation handles PATCH /annotations/:id
+// UpdateAnnotation handles PATCH /annotations/:id (accepts FormData)
 func (h *AnnotationHandler) UpdateAnnotation(c *gin.Context) {
 	// Get user from context
 	userInterface, exists := c.Get("user")
@@ -382,25 +459,129 @@ func (h *AnnotationHandler) UpdateAnnotation(c *gin.Context) {
 
 	annotationID := c.Param("id")
 
-	// Parse request body
-	var req models.UpdateAnnotationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "Invalid request body",
-			"error":   err.Error(),
-		})
-		return
+	req := &models.UpdateAnnotationRequest{}
+	
+	// Check Content-Type to determine how to parse the request
+	contentType := c.GetHeader("Content-Type")
+	isMultipart := strings.HasPrefix(contentType, "multipart/form-data")
+	
+	if isMultipart {
+		// Parse as FormData
+		title := c.PostForm("title")
+		annotation := c.PostForm("annotation")
+		genre := c.PostForm("genre")
+		
+		log.Printf("PATCH /annotations/%s - FormData: title='%s', annotation_len=%d, genre='%s'", 
+			annotationID, title, len(annotation), genre)
+		
+		if title != "" {
+			req.Title = &title
+		}
+		if annotation != "" {
+			req.Annotation = &annotation
+		}
+		if genre != "" {
+			req.Genre = &genre
+		}
+		
+		// Handle optional image upload
+		imageFile, err := c.FormFile("image")
+		if err == nil {
+			// Image file provided - validate and upload to S3
+			ext := strings.ToLower(filepath.Ext(imageFile.Filename))
+			validExts := map[string]bool{
+				".jpg":  true,
+				".jpeg": true,
+				".png":  true,
+				".gif":  true,
+				".webp": true,
+			}
+
+			if !validExts[ext] {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"message": "Only image files are supported (jpg, png, gif, webp)",
+				})
+				return
+			}
+
+			// Open and read image file
+			file, err := imageFile.Open()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": "Failed to open uploaded image",
+					"error":   err.Error(),
+				})
+				return
+			}
+			defer file.Close()
+
+			imageData := make([]byte, imageFile.Size)
+			_, err = file.Read(imageData)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": "Failed to read uploaded image",
+					"error":   err.Error(),
+				})
+				return
+			}
+
+			// Determine content type
+			imageContentType := "image/jpeg"
+			switch ext {
+			case ".png":
+				imageContentType = "image/png"
+			case ".gif":
+				imageContentType = "image/gif"
+			case ".webp":
+				imageContentType = "image/webp"
+			}
+
+			// Upload to S3 and get URL
+			imageURL, err := h.service.UploadImageForAnnotationUpdate(c.Request.Context(), annotationID, imageData, imageContentType)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": "Failed to upload image",
+					"error":   err.Error(),
+				})
+				return
+			}
+
+			req.Image = &imageURL
+		}
+	} else {
+		// Parse as JSON
+		var jsonReq models.UpdateAnnotationRequest
+		if err := c.ShouldBindJSON(&jsonReq); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "Invalid request body",
+				"error":   err.Error(),
+			})
+			return
+		}
+		
+		log.Printf("PATCH /annotations/%s - JSON: title=%v, annotation=%v, genre=%v, image=%v", 
+			annotationID, 
+			jsonReq.Title != nil,
+			jsonReq.Annotation != nil,
+			jsonReq.Genre != nil,
+			jsonReq.Image != nil)
+		
+		req = &jsonReq
 	}
 
 	// Update annotation
-	annotation, err := h.service.UpdateAnnotation(c.Request.Context(), annotationID, user.ID, &req)
+	var updatedAnnotation *models.Annotation
+	var err error
+	updatedAnnotation, err = h.service.UpdateAnnotation(c.Request.Context(), annotationID, user.ID, req)
 	if err != nil {
 		statusCode := http.StatusInternalServerError
 		if strings.Contains(err.Error(), "not found") {
 			statusCode = http.StatusNotFound
-		} else if strings.Contains(err.Error(), "unauthorized") {
-			statusCode = http.StatusForbidden
 		}
 
 		c.JSON(statusCode, gin.H{
@@ -414,6 +595,6 @@ func (h *AnnotationHandler) UpdateAnnotation(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Annotation updated successfully",
-		"data":    annotation.ToResponse(),
+		"data":    updatedAnnotation.ToResponse(),
 	})
 }
