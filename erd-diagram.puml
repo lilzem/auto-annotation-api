@@ -1,0 +1,73 @@
+@startuml Діаграма бази даних (ERD)
+
+' Black and white compact styling
+skinparam monochrome true
+skinparam shadowing false
+skinparam linetype ortho
+skinparam defaultFontSize 10
+
+' Entity styling
+skinparam class {
+    BorderColor Black
+    BackgroundColor White
+    ArrowColor Black
+}
+
+' Entities
+entity "users (користувачі)" as users {
+    * **_id** : string <<PK>>
+    --
+    email : string <<unique>>
+    password : string
+    name : string
+    role : string
+    --
+    created_at : isodate
+    updated_at : isodate
+}
+
+entity "annotations (анотації)" as annotations {
+    * **_id** : string <<PK>>
+    --
+    * user_id : string <<FK>>
+    title : string
+    source_file : string
+    source_type : string
+    text_content : string
+    annotation : string
+    genre : string
+    tts_url : string
+    status : string
+    --
+    created_at : isodate
+    updated_at : isodate
+}
+
+' Relationships
+users ||--o{ annotations : "створює"
+
+note right of users
+  **Ролі:**
+  • "content" - контент-креатор
+  • "basic" - звичайний користувач
+  
+  **Аутентифікація:**
+  • Пароль хешований bcrypt
+  • JWT токени для авторизації
+end note
+
+note right of annotations
+  **Статуси:**
+  • "processing" - обробка
+  • "completed" - завершено
+  • "failed" - помилка
+  
+  **Типи джерел:**
+  • "pdf"
+  
+  **Опціональні поля:**
+  • tts_url (якщо згенеровано TTS)
+end note
+
+@enduml
+

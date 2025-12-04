@@ -1,0 +1,184 @@
+@startuml Діаграма класів
+
+' Black and white compact styling
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+skinparam defaultFontSize 9
+skinparam packageStyle rectangle
+skinparam nodesep 30
+skinparam ranksep 30
+skinparam linetype ortho
+
+skinparam class {
+    BorderColor Black
+    BackgroundColor White
+    ArrowColor Black
+}
+
+left to right direction
+
+package "Моделі" {
+    class User {
+        +ID, Email, Password, Name, Role
+        +CreatedAt, UpdatedAt
+        --
+        +IsContentCreator(): bool
+        +ToUserResponse()
+    }
+
+    class Annotation {
+        +ID, UserID, Title, Image
+        +SourceFile, SourceType
+        +TextContent, Annotation, Genre
+        +TTSURL, Status, ErrorMessage
+        +CreatedAt, UpdatedAt
+        --
+        +ToResponse()
+    }
+
+    class "Request/Response DTOs" as DTOs {
+        RegisterRequest
+        LoginRequest
+        AuthResponse
+        UserResponse
+        JWTClaims
+        AnnotationResponse
+        CreateAnnotationRequest
+        UpdateAnnotationRequest
+    }
+}
+
+package "Обробники" {
+    class AuthHandler {
+        -authService
+        --
+        +Register()
+        +Login()
+        +GetProfile()
+    }
+
+    class AnnotationHandler {
+        -service
+        -uploadDir
+        --
+        +UploadAndCreate()
+        +Get/GetAll()
+        +Update/Delete()
+        +GenerateTTS()
+        +CheckServices()
+    }
+}
+
+package "Сервіси" {
+    class AuthService {
+        -collection
+        --
+        +Register()
+        +Login()
+        +GetUserByID()
+    }
+
+    class AnnotationService {
+        -collection
+        -ollamaClient
+        -awsService
+        --
+        +CreateFromStream()
+        +GenerateTTS()
+        +Update/Delete()
+        +Get/GetAll()
+        +UploadImage()
+    }
+
+    class AWSService {
+        -s3Client
+        -pollyClient
+        --
+        +GenerateTTS()
+        +UploadToS3()
+        +UploadImage()
+    }
+
+    class OllamaClient {
+        -baseURL
+        -model
+        --
+        +GenerateAnnotation()
+        +TestConnection()
+    }
+
+    interface FileParser {
+        +ExtractText()
+        +ExtractTextFromReader()
+    }
+
+    class PDFParser {
+        +ExtractText()
+    }
+}
+
+package "Middleware" {
+    class AuthMiddleware {
+        +AuthMiddleware()
+        +ContentCreatorMiddleware()
+        +RoleMiddleware()
+    }
+}
+
+package "Утиліти" {
+    class JWTUtils {
+        -jwtSecret
+        --
+        +GenerateToken()
+        +ValidateToken()
+    }
+}
+
+package "Конфігурація" {
+    class Config {
+        +MongoURI
+        +DatabaseName
+        +Port, GinMode
+        +OllamaBaseURL
+        +OllamaModel
+        +AWS Config
+        --
+        +Load()
+    }
+    
+    class Database {
+        -client
+        -database
+        --
+        +Connect()
+        +Disconnect()
+    }
+}
+
+' Relationships
+AuthHandler --> AuthService
+AnnotationHandler --> AnnotationService
+
+AnnotationService --> OllamaClient
+AnnotationService --> AWSService
+AnnotationService --> PDFParser
+PDFParser ..|> FileParser
+
+AuthService --> User
+AuthService --> DTOs
+AuthService --> JWTUtils
+AnnotationService --> Annotation
+AnnotationService --> DTOs
+
+AuthMiddleware --> AuthService
+AuthMiddleware --> JWTUtils
+AuthMiddleware --> User
+
+Config --> Database
+Config ..> AuthHandler
+Config ..> AnnotationHandler
+Config ..> AWSService
+
+@enduml
+

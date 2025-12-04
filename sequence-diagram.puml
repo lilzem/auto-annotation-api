@@ -1,0 +1,47 @@
+@startuml Діаграма послідовностей
+
+' Compact black and white styling
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 9
+skinparam sequenceArrowThickness 1.5
+skinparam BoxPadding 5
+hide footbox
+
+actor Користувач as User
+participant API
+participant Сервіс as Service
+database БД as DB
+
+== Аутентифікація ==
+
+User -> API: POST /auth/login
+API -> DB: Перевірка + генерація JWT
+DB --> User: Токен
+
+== Створення анотації ==
+
+User -> API: POST /annotations/upload (PDF)
+API -> Service: Створення
+Service -> Service: Екстракція тексту
+Service -> DB: Запис (status: processing)
+Service -> Service: AI: анотація + жанр
+Service -> DB: Оновлення (completed)
+DB --> User: 201 Created
+
+== Генерація TTS ==
+
+User -> API: POST /annotations/:id/tts
+API -> Service: Генерація
+Service -> Service: AWS Polly + S3
+Service -> DB: Запис tts_url
+DB --> User: 200 OK + URL
+
+== Перегляд ==
+
+User -> API: GET /annotations
+API -> DB: Запит списку
+DB --> User: Список анотацій
+
+@enduml
+

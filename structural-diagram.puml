@@ -1,0 +1,37 @@
+@startuml Структурна схема
+
+' Black and white compact styling
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 9
+skinparam componentStyle rectangle
+skinparam nodesep 60
+skinparam ranksep 60
+
+top to bottom direction
+
+actor Користувач
+
+component "Веб-інтерфейс\n(React/Vue)" as Frontend
+component "API Сервер\n(Go/Gin)" as API
+component "Бізнес-логіка" as Services
+
+database "MongoDB\n(users, annotations)" as DB
+
+component "PDF Parser" as Parser
+component "Ollama AI\n(генерація анотацій)" as AI
+component "AWS S3/Polly\n(файли + TTS)" as AWS
+
+Користувач <--> Frontend : HTTPS
+
+Frontend <--> API : REST API\n(JSON)
+
+API <--> Services : обробка запитів
+
+Services <--> DB : дані
+Services <--> Parser : текст з PDF
+Services <--> AI : AI анотація
+Services <--> AWS : файли + TTS
+
+@enduml
+

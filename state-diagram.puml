@@ -1,0 +1,80 @@
+@startuml Діаграма станів анотації
+
+' Black and white compact styling
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 10
+skinparam state {
+    BorderColor Black
+    BackgroundColor White
+    ArrowColor Black
+}
+
+[*] --> Створення : Користувач завантажує PDF
+
+state Створення {
+    state "Валідація файлу" as Valid
+    state "Екстракція тексту" as Extract
+    state "Збереження в БД" as SaveDB
+    
+    [*] --> Valid
+    Valid --> Extract : Файл валідний
+    Valid --> [*] : Помилка валідації
+    Extract --> SaveDB : Текст отримано
+}
+
+Створення --> Обробка : Запис створено в БД
+
+state Обробка {
+    state "Генерація анотації" as GenAnnot
+    state "Визначення жанру" as DetectGenre
+    state "Оновлення БД" as UpdateDB
+    
+    [*] --> GenAnnot
+    GenAnnot --> DetectGenre : AI згенерувала текст
+    DetectGenre --> UpdateDB : Жанр визначено
+}
+
+Обробка --> Завершено : Анотація готова
+Обробка --> Помилка : Збій AI/мережі
+
+state Завершено {
+    state "Без аудіо" as NoAudio
+    state "Генерація TTS" as GenTTS
+    state "З аудіо" as WithAudio
+    
+    [*] --> NoAudio
+    NoAudio --> GenTTS : POST /annotations/:id/tts
+    GenTTS --> WithAudio : TTS згенеровано
+}
+
+Завершено --> Оновлення : PATCH /annotations/:id
+Оновлення --> Завершено : Дані оновлено
+
+Завершено --> Видалення : DELETE /annotations/:id
+Видалення --> [*] : Анотація видалена
+
+Помилка --> [*] : Анотацію можна видалити
+
+note right of Обробка
+  **Status: "processing"**
+  • Генерація через Ollama AI
+  • Може тривати 30-60 сек
+  • При помилці -> "failed"
+end note
+
+note right of Завершено
+  **Status: "completed"**
+  • Анотація готова до перегляду
+  • Можна згенерувати TTS
+  • Можна редагувати
+end note
+
+note right of Помилка
+  **Status: "failed"**
+  • ErrorMessage містить опис
+  • Анотація не придатна до використання
+end note
+
+@enduml
+

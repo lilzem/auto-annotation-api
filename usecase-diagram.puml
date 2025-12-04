@@ -1,0 +1,115 @@
+@startuml Діаграма прецедентів
+
+' Black and white compact styling
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 10
+skinparam packageStyle rectangle
+
+skinparam usecase {
+    BorderColor Black
+    BackgroundColor White
+    ArrowColor Black
+}
+
+skinparam actor {
+    BorderColor Black
+    BackgroundColor White
+}
+
+left to right direction
+
+actor "Користувач\n(Контент-креатор)" as User
+
+package "Аутентифікація" {
+        usecase (Реєстрація) as UC1
+        usecase (Логін) as UC2
+        usecase (Перегляд профілю) as UC3
+    }
+    
+    package "Управління анотаціями" {
+        usecase (Завантажити PDF і\nстворити анотацію) as UC4
+        usecase (Переглянути анотацію) as UC5
+        usecase (Переглянути всі анотації) as UC6
+        usecase (Оновити анотацію) as UC7
+        usecase (Видалити анотацію) as UC8
+        usecase (Отримати статистику) as UC9
+    }
+    
+    package "Обробка медіа" {
+        usecase (Завантажити зображення) as UC10
+        usecase (Згенерувати TTS аудіо) as UC11
+        usecase (Завантажити аудіо) as UC12
+    }
+    
+    package "Система" {
+        usecase (Перевірити статус сервісів) as UC13
+    }
+    
+    ' Internal processes (not directly called by user)
+    usecase (Екстракція тексту з PDF) as INT1
+    usecase (Генерація анотації\nчерез AI) as INT2
+    usecase (Визначення жанру) as INT3
+    usecase (Збереження в БД) as INT4
+    usecase (Завантаження на S3) as INT5
+    usecase (Синтез мовлення) as INT6
+
+' User relationships
+User --> UC1
+User --> UC2
+User --> UC3
+User --> UC4
+User --> UC5
+User --> UC6
+User --> UC7
+User --> UC8
+User --> UC9
+User --> UC10
+User --> UC11
+User --> UC12
+User --> UC13
+
+' Include relationships (internal processes)
+UC4 ..> INT1 : <<include>>
+UC4 ..> INT2 : <<include>>
+UC4 ..> INT3 : <<include>>
+UC4 ..> INT4 : <<include>>
+
+UC7 ..> INT4 : <<include>>
+UC8 ..> INT4 : <<include>>
+
+UC10 ..> INT5 : <<include>>
+UC11 ..> INT6 : <<include>>
+UC11 ..> INT5 : <<include>>
+
+note right of UC4
+  **Робочий процес:**
+  1. Користувач завантажує PDF
+  2. Система витягує текст
+  3. Система генерує анотацію (Ollama AI)
+  4. Система визначає жанр (Ollama AI)
+  5. Система зберігає в БД (MongoDB)
+  
+  **Зовнішні залежності:**
+  • Ollama (LLM)
+  • MongoDB
+end note
+
+note right of UC11
+  **Генерація TTS:**
+  • Перетворює текст анотації в MP3
+  • Використовує AWS Polly
+  • Зберігає аудіо в AWS S3
+  • Повертає публічний URL
+end note
+
+note bottom
+  **Використовувані зовнішні сервіси:**
+  • MongoDB - зберігання даних
+  • Ollama - генерація анотацій AI
+  • AWS S3 - зберігання файлів (зображення, аудіо)
+  • AWS Polly - синтез мовлення
+end note
+
+@enduml
+
