@@ -1,0 +1,82 @@
+@startuml Інфологічна модель
+
+' Black and white compact styling
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontSize 9
+skinparam classAttributeIconSize 0
+skinparam nodesep 80
+skinparam ranksep 80
+
+hide circle
+hide methods
+
+' Основна сутність
+class "Користувач" as User {
+  ID, Email, Ім'я
+  Роль (content/basic)
+  Дата реєстрації
+}
+
+' Ієрархія документів
+class "PDF-документ" as Document {
+  ID, Назва
+  Розмір, Шлях
+  Статус обробки
+}
+
+class "Анотація" as Annotation {
+  ID, Заголовок
+  Витягнутий текст
+  Згенерована анотація
+  Зображення
+  Статус
+}
+
+class "Аудіофайл" as Audio {
+  ID, URL
+  Тривалість, Формат
+  Розмір
+}
+
+' Довідникові дані
+class "Жанр" as Genre {
+  Назва
+  Опис
+}
+
+' Системні дані
+class "Метадані" as Meta <<system>> {
+  Версія
+  Час створення/оновлення
+  Автор змін, IP
+}
+
+' Зв'язки (ієрархія зверху вниз)
+User "1" -down- "0..*" Document : має бібліотеку
+Document "1" -down- "1..*" Annotation : містить
+Annotation "1" -down- "0..1" Audio : має аудіо
+
+Genre "1" -- "N" Document : класифікує
+
+Meta .up. User
+Meta .up. Document
+Meta .up. Annotation
+Meta .up. Audio
+
+note right of User
+  Ролі: content, basic
+end note
+
+note right of Annotation
+  Статуси: processing,
+  completed, failed
+end note
+
+note right of Genre
+  Визначається AI:
+  Fiction, Academic, etc
+end note
+
+@enduml
+
